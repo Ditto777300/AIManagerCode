@@ -55,7 +55,33 @@ class AiManager:
         self.new_obs_flag = False
         self.info = ""
         self.ai_callback = None
-    
+        self.enemiesx1y1 = []
+        self.enemyiesx2y1 = []
+
+
+    def reset(self):
+        if self.done:
+            print("Constructing AI Manager")
+            # self.ai_pub = publisher
+            self.count = 0
+            self.missile = 8
+            self.newobs = False
+            self.last_msg = None
+            self.done = False
+            self.use_myai = False
+            self.enemyShipsID_curr = [] # list of the TrackId of enemy missile
+            self.enemyPositions_curr=[]
+            self.friendlyShips_curr = [] # list of names of friendly ship
+            self.friendlyPositions_curr = [] # xy position of friednly ship,
+            self.enemyShipsName_curr = []
+
+            self.friendlyHealths_curr = [] # list of health of friendly ship
+            self.fired_shots ={} # dict of fired shot, used in alg2 so no double shot at same target
+            self.new_obs_flag = False
+            self.info = ""
+            self.ai_callback = None
+            self.enemiesx1y1 = []
+            self.enemyiesx2y1 = []
     # wang ai callback is called in receivedStatePb 
     def set_aicallback(self, aicallback):
         self.ai_callback = aicallback
@@ -106,6 +132,7 @@ class AiManager:
 ### ship killed by enemy will be removed from msg.assets
     def do_aiaction(self, action):
         print("********do_aiaction************")
+        print(type(action))
         print(self.enemyShipsID_curr)
         print(self.enemyPositions_curr)
         print("action[0] : ", action[0], " enemy #: ", len(self.enemyShipsID_curr))
@@ -124,7 +151,10 @@ class AiManager:
             return
         assert action[0] <= len(self.enemyShipsID_curr)
         assert action[1] <= len(self.friendlyShips_curr)
-        
+        print("*********************************")
+        print("action: ")
+        print(action)
+        print("*********************************")
         ship_action.TargetId = self.enemyShipsID_curr[action[0]]
         ship_action.AssetName = self.friendlyShips_curr[action[1]]
         ship_action.weapon = "Chainshot_System" if action[2] ==1 else "Cannon_System"
@@ -146,6 +176,7 @@ class AiManager:
             self.do_aiaction(self.ai_action_0)
         # Call function to show example of building an action
         output_message = self.createActions(msg)
+        self.reset()
         print(output_message)
 
         # To advance in step mode, its required to return an OutputPb
@@ -237,6 +268,7 @@ class AiManager:
         output_message: OutputPb = OutputPb()
         enemyShips_unassigned=[]
         enemyPositions_unassigned = []
+
         print("alg2 dbg fired shots: ", str(self.fired_shots), " remaining weapons list len: ", len(assetWeapons))
         for i, enemy in enumerate(enemyShips):
             if enemy in self.fired_shots.keys():
@@ -274,25 +306,45 @@ class AiManager:
         assetShips_des = assetShips_np[weapon_desord]
         print("alg2 dbg weapons: ", assetWeapons_des)
 
+
         for i, ii in enumerate(ind_sort): #loop over enemy
+            maxChainshots = -1
+            maxChainshotsIndex = -1
+            maxCannonsIndex = -1
+            maxCannons = -1
+            for j in range(len(assetShips)):
+                if assetWeapons[j][0] > maxCannons:
+                    maxCannons = assetWeapons[j][0]
+                    maxCannonsIndex = j
+                if assetWeapons[j][1] > maxChainshots:
+                    maxChainshots = assetWeapons[j][1]
+                    maxChainshotsIndex = j
+
             if i> len(assetShips_des):
                 print("alg2 dbg: ship # limit to fire")
                 break # maximum engagement # is assetship number
-            if dist_enemy[ii] > 20000:
-                print("alg2 dbg: enemy too far, delay for next time")
-                break # enemy too far to engage
+            # if dist_enemy[ii] > 100000:
+            #     print("alg2 dbg: enemy too far, delay for next time")
+            #     break # enemy too far to engage
             if (np.sum(assetWeapons_des[i]) ==0):
                 print ("alg2 dbg: weapon # 0 for both type: ", assetShips_des[i] )
                 break
             ship_action2: ShipActionPb = ShipActionPb()
             print("alg2 dbg action init: ", ship_action2)
             ship_action2.TargetId = enemyShips_unassigned[ii] # ii index of the i-th closest enemy
-            ship_action2.AssetName = assetShips_des[i] # i-th asset
-
-            if assetWeapons_des[i][0] >0:
-                ship_action2.weapon = "Cannon_System"
+            if maxChainshots > 0:
+                ship_action2.AssetName = assetShips_np[maxChainshotsIndex]
+                assetWeapons[maxChainshotsIndex][1] -= 1
+                ship_action2.weapon = "Chainshot_System"
             else:
-                ship_action2.weapon = "Chainshot_System" # or "Cannon_System"
+                ship_action2.AssetName = assetShips_np[maxCannonsIndex]
+                assetWeapons[maxCannonsIndex][0] -= 1
+                ship_action2.weapon = "Cannon_System"  # or "Cannon_System"
+
+            # if assetWeapons_des[i][1] >0:
+            #     ship_action2.weapon = "Chainshot_System"
+            # else:
+            #     ship_action2.weapon = "Cannon_System" # or "Cannon_System"
             print("alg2 dbg firing: ", ship_action2)
             output_message.actions.append(ship_action2)
             self.fired_shots[enemyShips_unassigned[ii]] = ship_action2
@@ -346,6 +398,10 @@ class AiManager:
                 f2.write(f"\n{self.count}, {asset.AssetName}, {asset.isHVU}, {asset.health}, {round(asset.PositionX,3)}, {round(asset.PositionY,3)}, {round(asset.PositionZ,3)}, {asset.Lle}, {asset.weapons}")
 
         output_message = self.action_alg2(enemyShips, enemyPositions, assetShips, assetPositions, assetWeapons)
+        print("*********************************")
+        print("assetWeapons")
+        print(assetWeapons)
+        print("*********************************")
 #        output_message = self.action_alg1(enemyShips, enemyPositions, assetShips, assetPositions, assetWeapons)
         #wang this is where we decide to use ai action or regular action
         if self.use_myai:
